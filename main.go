@@ -23,8 +23,10 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	mux.HandleFunc("GET /api/metrics", cfg.getNumRequests)
-	mux.HandleFunc("POST /api/reset", cfg.resetNumRequests)
+	mux.HandleFunc("GET /admin/metrics", cfg.getNumRequests)
+	mux.HandleFunc("POST /admin/reset", cfg.resetNumRequests)
+
+	mux.HandleFunc("POST /api/validate_chirp", cfg.validateChirp)
 
 	server := http.Server{}
 	server.Addr = ":8080"
