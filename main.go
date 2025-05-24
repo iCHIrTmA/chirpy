@@ -1,12 +1,26 @@
 package main
 
 import (
+	"database/sql"
+	"log"
 	"net/http"
+	"os"
+
+	"github.com/chirpy/internal/database"
+	_ "github.com/lib/pq"
 )
 
 func main() {
 	mux := http.NewServeMux()
 	cfg := &apiConfig{}
+	dbURL := os.Getenv("DB_URL")
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cfg.db = database.New(db)
 
 	mux.Handle(
 		"/app/",
