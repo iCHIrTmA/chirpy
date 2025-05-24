@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -30,12 +31,40 @@ func (cfg *apiConfig) getNumRequests(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", cfg.fileserverHits.Load()) // Write HTML directly
 }
 
-func (cfg *apiConfig) resetNumRequests(w http.ResponseWriter, req *http.Request) {
-	cfg.fileserverHits.Store(0)
+// func (cfg *apiConfig) resetNumRequests(w http.ResponseWriter, req *http.Request) {
+// 	cfg.fileserverHits.Store(0)
+
+// 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+// 	w.WriteHeader(http.StatusOK)
+// 	w.Write([]byte("Successfully reset number of hits"))
+// }
+
+func (cfg *apiConfig) resetUsers(w http.ResponseWriter, req *http.Request) {
+	type response struct {
+		Error string `json:"error,omitempty"`
+	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+	if os.Getenv("PLATFORM") != "dev" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	err := cfg.db.DeleteAllUsers(req.Context())
+
+	if err != nil {
+		fmt.Println(err)
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusNotImplemented)
+		w.Write(errResponse)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Successfully reset number of hits"))
+	w.Write([]byte("Successfully removed all records in users table"))
 }
 
 func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
@@ -93,8 +122,63 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
 	}
 
 	successResponse, _ := json.Marshal(response{
-		CleanedBody: strings.Join(words, " "),
+		CleanedBody: strings.Join(words, ","),
 	})
 	w.WriteHeader(200)
+	w.Write(successResponse)
+}
+
+func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
+	type requestData struct {
+		Email string `json:"email"`
+	}
+
+	type response struct {
+		Error     string `json:"error,omitempty"`
+		ID        string `json:"id,omitempty"`
+		Email     string `json:"email,omitempty"`
+		CreatedAt string `json:"created_at,omitempty"`
+		UpdatedAt string `json:"updated_at,omitempty"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	decoder := json.NewDecoder(req.Body)
+	userData := requestData{}
+
+	err := decoder.Decode(&userData)
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	user, err := cfg.db.CreateUser(req.Context(), userData.Email)
+
+	if err != nil {
+		// fmt.Errorf("error: %w", err)
+		fmt.Println("hello", err)
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	// printF(user)
+	// fmt.Printf("%+v\n", user)
+
+	successResponse, _ := json.Marshal(response{
+		ID:        user.ID.String(),
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt.String(),
+		UpdatedAt: user.UpdatedAt.String(),
+	})
+	w.WriteHeader(http.StatusCreated)
 	w.Write(successResponse)
 }

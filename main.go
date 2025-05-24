@@ -7,13 +7,20 @@ import (
 	"os"
 
 	"github.com/chirpy/internal/database"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 func main() {
+	godotenv.Load()
+
 	mux := http.NewServeMux()
 	cfg := &apiConfig{}
 	dbURL := os.Getenv("DB_URL")
+
+	// fmt.Println("hello", err)
+
+	// fmt.Println("main()", dbURL, os.Getenv("DB_URL"))
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -38,9 +45,11 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /admin/metrics", cfg.getNumRequests)
-	mux.HandleFunc("POST /admin/reset", cfg.resetNumRequests)
+	// mux.HandleFunc("POST /admin/reset", cfg.resetNumRequests)
+	mux.HandleFunc("POST /admin/reset", cfg.resetUsers)
 
 	mux.HandleFunc("POST /api/validate_chirp", cfg.validateChirp)
+	mux.HandleFunc("POST /api/users", cfg.createUser)
 
 	server := http.Server{}
 	server.Addr = ":8080"
