@@ -267,6 +267,51 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, req *http.Request) {
 	w.Write(successResponse)
 }
 
+func (cfg *apiConfig) getChirp(w http.ResponseWriter, req *http.Request) {
+	type response struct {
+		Error     string `json:"error,omitempty"`
+		ID        string `json:"id,omitempty"`
+		Body      string `json:"body,omitempty"`
+		UserID    string `json:"user_id,omitempty"`
+		CreatedAt string `json:"created_at,omitempty"`
+		UpdatedAt string `json:"updated_at,omitempty"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	uuid, err := uuid.Parse(req.PathValue("chirpID"))
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirp(req.Context(), uuid)
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusNotFound)
+		w.Write(errResponse)
+		return
+	}
+
+	successResponse, _ := json.Marshal(response{
+		ID:        chirp.ID.String(),
+		Body:      chirp.Body,
+		UserID:    chirp.UserID.String(),
+		CreatedAt: chirp.CreatedAt.String(),
+		UpdatedAt: chirp.UpdatedAt.String(),
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Write(successResponse)
+}
+
 func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 	type requestData struct {
 		Email string `json:"email"`
