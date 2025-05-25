@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/chirpy/internal/database"
+	"github.com/google/uuid"
 )
 
 type apiConfig struct {
@@ -67,23 +68,88 @@ func (cfg *apiConfig) resetUsers(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte("Successfully removed all records in users table"))
 }
 
-func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
-	type chirp struct {
-		Body string `json:"body"`
+// func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
+// 	type chirp struct {
+// 		Body string `json:"body"`
+// 	}
+
+// 	type response struct {
+// 		// the key will be the name of struct field unless you give it an explicit JSON tag
+// 		Error       string `json:"error,omitempty"`
+// 		CleanedBody string `json:"cleaned_body,omitempty"`
+// 	}
+
+// 	w.Header().Set("Content-Type", "application/json")
+
+// 	decoder := json.NewDecoder(req.Body)
+// 	chirpVal := chirp{}
+
+// 	err := decoder.Decode(&chirpVal)
+
+// 	if err != nil {
+// 		errResponse, _ := json.Marshal(response{
+// 			Error: "Something went wrong",
+// 		})
+// 		w.WriteHeader(500)
+// 		w.Write(errResponse)
+// 		return
+// 	}
+
+// 	if chirpVal.Body == "" {
+// 		errResponse, _ := json.Marshal(response{
+// 			Error: "Chirp json request body is missing",
+// 		})
+// 		w.WriteHeader(400)
+// 		w.Write(errResponse)
+// 		return
+// 	}
+
+// 	if len(chirpVal.Body) > 140 {
+// 		errResponse, _ := json.Marshal(response{
+// 			Error: "Chirp is too long",
+// 		})
+// 		w.WriteHeader(400)
+// 		w.Write(errResponse)
+// 		return
+// 	}
+
+// 	// clean profanity
+// 	words := strings.Split(chirpVal.Body, " ")
+// 	profanities := []string{"kerfuffle", "sharbert", "fornax"}
+// 	for i, word := range words {
+// 		if slices.Contains(profanities, strings.ToLower(word)) {
+// 			words[i] = "****"
+// 		}
+// 	}
+
+// 	successResponse, _ := json.Marshal(response{
+// 		CleanedBody: strings.Join(words, ","),
+// 	})
+// 	w.WriteHeader(200)
+// 	w.Write(successResponse)
+// }
+
+func (cfg *apiConfig) createChirp(w http.ResponseWriter, req *http.Request) {
+	type requestData struct {
+		Body   string `json:"body"`
+		UserID string `json:"user_id"`
 	}
 
 	type response struct {
-		// the key will be the name of struct field unless you give it an explicit JSON tag
-		Error       string `json:"error,omitempty"`
-		CleanedBody string `json:"cleaned_body,omitempty"`
+		Error     string `json:"error,omitempty"`
+		ID        string `json:"id,omitempty"`
+		Body      string `json:"body,omitempty"`
+		UserID    string `json:"user_id,omitempty"`
+		CreatedAt string `json:"created_at,omitempty"`
+		UpdatedAt string `json:"updated_at,omitempty"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
 	decoder := json.NewDecoder(req.Body)
-	chirpVal := chirp{}
+	chirpData := requestData{}
 
-	err := decoder.Decode(&chirpVal)
+	err := decoder.Decode(&chirpData)
 
 	if err != nil {
 		errResponse, _ := json.Marshal(response{
@@ -94,7 +160,7 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if chirpVal.Body == "" {
+	if chirpData.Body == "" {
 		errResponse, _ := json.Marshal(response{
 			Error: "Chirp json request body is missing",
 		})
@@ -103,7 +169,7 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if len(chirpVal.Body) > 140 {
+	if len(chirpData.Body) > 140 {
 		errResponse, _ := json.Marshal(response{
 			Error: "Chirp is too long",
 		})
@@ -113,7 +179,7 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// clean profanity
-	words := strings.Split(chirpVal.Body, " ")
+	words := strings.Split(chirpData.Body, " ")
 	profanities := []string{"kerfuffle", "sharbert", "fornax"}
 	for i, word := range words {
 		if slices.Contains(profanities, strings.ToLower(word)) {
@@ -121,10 +187,40 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	chirpDataUserId, err := uuid.Parse(chirpData.UserID)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(500)
+		w.Write(errResponse)
+		return
+	}
+
+	chirp, err := cfg.db.CreateChirp(
+		req.Context(),
+		database.CreateChirpParams{
+			Body:   strings.Join(words, " "),
+			UserID: chirpDataUserId,
+		})
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
 	successResponse, _ := json.Marshal(response{
-		CleanedBody: strings.Join(words, ","),
+		ID:        chirp.ID.String(),
+		Body:      chirp.Body,
+		UserID:    chirp.UserID.String(),
+		CreatedAt: chirp.CreatedAt.String(),
+		UpdatedAt: chirp.UpdatedAt.String(),
 	})
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusCreated)
 	w.Write(successResponse)
 }
 
