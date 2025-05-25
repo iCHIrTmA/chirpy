@@ -49,8 +49,10 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", cfg.resetUsers)
 
 	// mux.HandleFunc("POST /api/validate_chirp", cfg.validateChirp)
-	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
+
+	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
+	mux.HandleFunc("GET /api/chirps", cfg.getChirps)
 
 	server := http.Server{}
 	server.Addr = ":8080"

@@ -129,6 +129,49 @@ func (cfg *apiConfig) resetUsers(w http.ResponseWriter, req *http.Request) {
 // 	w.Write(successResponse)
 // }
 
+func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
+	type response struct {
+		Error string `json:"error,omitempty"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	dbChirps, err := cfg.db.ListChirps(req.Context())
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	type Chirp struct {
+		ID        string `json:"id"`
+		Body      string `json:"body"`
+		UserID    string `json:"user_id"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+	}
+
+	chirps := []Chirp{}
+	for _, dbChirp := range dbChirps {
+		chirp := Chirp{
+			ID:        dbChirp.ID.String(),
+			Body:      dbChirp.Body,
+			UserID:    dbChirp.UserID.String(),
+			CreatedAt: dbChirp.CreatedAt.String(),
+			UpdatedAt: dbChirp.UpdatedAt.String(),
+		}
+		chirps = append(chirps, chirp)
+	}
+
+	successResponse, _ := json.Marshal(chirps)
+	w.WriteHeader(http.StatusOK)
+	w.Write(successResponse)
+}
+
 func (cfg *apiConfig) createChirp(w http.ResponseWriter, req *http.Request) {
 	type requestData struct {
 		Body   string `json:"body"`
