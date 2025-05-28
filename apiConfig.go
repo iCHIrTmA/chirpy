@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/chirpy/internal/auth"
 	"github.com/chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -314,7 +315,8 @@ func (cfg *apiConfig) getChirp(w http.ResponseWriter, req *http.Request) {
 
 func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 	type requestData struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	type response struct {
@@ -341,8 +343,17 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	user, err := cfg.db.CreateUser(req.Context(), userData.Email)
+	hashedPassword, err := auth.HashPassword(userData.Password)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
 
+	user, err := cfg.db.CreateUser(req.Context(), database.CreateUserParams{Email: userData.Email, HashedPassword: hashedPassword})
 	if err != nil {
 		// fmt.Errorf("error: %w", err)
 		fmt.Println("hello", err)
@@ -364,5 +375,71 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 		UpdatedAt: user.UpdatedAt.String(),
 	})
 	w.WriteHeader(http.StatusCreated)
+	w.Write(successResponse)
+}
+
+func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
+	type requestData struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	type response struct {
+		Error     string `json:"error,omitempty"`
+		ID        string `json:"id,omitempty"`
+		Email     string `json:"email,omitempty"`
+		CreatedAt string `json:"created_at,omitempty"`
+		UpdatedAt string `json:"updated_at,omitempty"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	decoder := json.NewDecoder(req.Body)
+	userData := requestData{}
+
+	err := decoder.Decode(&userData)
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	// fetch user by email
+	user, err := cfg.db.GetUserByEmail(req.Context(), userData.Email)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Incorrect email or password",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	// printF(user)
+	// fmt.Printf("%+v\n", user)
+	fmt.Printf("%+v\n", userData.Password)
+	fmt.Printf("%+v\n", user.HashedPassword)
+
+	err = auth.CheckPasswordHash(user.HashedPassword, userData.Password)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Incorrect email or password",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	successResponse, _ := json.Marshal(response{
+		ID:        user.ID.String(),
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt.String(),
+		UpdatedAt: user.UpdatedAt.String(),
+	})
+	w.WriteHeader(http.StatusOK)
 	w.Write(successResponse)
 }
