@@ -16,11 +16,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	cfg := &apiConfig{}
+	cfg.authSecret = os.Getenv("SECRET_AUTH_KEY")
 	dbURL := os.Getenv("DB_URL")
-
-	// fmt.Println("hello", err)
-
-	// fmt.Println("main()", dbURL, os.Getenv("DB_URL"))
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -51,6 +48,8 @@ func main() {
 	// mux.HandleFunc("POST /api/validate_chirp", cfg.validateChirp)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
 	mux.HandleFunc("POST /api/login", cfg.loginUser)
+	mux.HandleFunc("POST /api/refresh", cfg.refreshAccessToken)
+	mux.HandleFunc("POST /api/revoke", cfg.revokeAccessToken)
 
 	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	mux.HandleFunc("GET /api/chirps", cfg.getChirps)

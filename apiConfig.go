@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/chirpy/internal/auth"
 	"github.com/chirpy/internal/database"
@@ -16,6 +17,7 @@ import (
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	authSecret     string
 	db             *database.Queries
 }
 
@@ -68,67 +70,6 @@ func (cfg *apiConfig) resetUsers(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Successfully removed all records in users table"))
 }
-
-// func (cfg *apiConfig) validateChirp(w http.ResponseWriter, req *http.Request) {
-// 	type chirp struct {
-// 		Body string `json:"body"`
-// 	}
-
-// 	type response struct {
-// 		// the key will be the name of struct field unless you give it an explicit JSON tag
-// 		Error       string `json:"error,omitempty"`
-// 		CleanedBody string `json:"cleaned_body,omitempty"`
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-
-// 	decoder := json.NewDecoder(req.Body)
-// 	chirpVal := chirp{}
-
-// 	err := decoder.Decode(&chirpVal)
-
-// 	if err != nil {
-// 		errResponse, _ := json.Marshal(response{
-// 			Error: "Something went wrong",
-// 		})
-// 		w.WriteHeader(500)
-// 		w.Write(errResponse)
-// 		return
-// 	}
-
-// 	if chirpVal.Body == "" {
-// 		errResponse, _ := json.Marshal(response{
-// 			Error: "Chirp json request body is missing",
-// 		})
-// 		w.WriteHeader(400)
-// 		w.Write(errResponse)
-// 		return
-// 	}
-
-// 	if len(chirpVal.Body) > 140 {
-// 		errResponse, _ := json.Marshal(response{
-// 			Error: "Chirp is too long",
-// 		})
-// 		w.WriteHeader(400)
-// 		w.Write(errResponse)
-// 		return
-// 	}
-
-// 	// clean profanity
-// 	words := strings.Split(chirpVal.Body, " ")
-// 	profanities := []string{"kerfuffle", "sharbert", "fornax"}
-// 	for i, word := range words {
-// 		if slices.Contains(profanities, strings.ToLower(word)) {
-// 			words[i] = "****"
-// 		}
-// 	}
-
-// 	successResponse, _ := json.Marshal(response{
-// 		CleanedBody: strings.Join(words, ","),
-// 	})
-// 	w.WriteHeader(200)
-// 	w.Write(successResponse)
-// }
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 	type response struct {
@@ -194,12 +135,32 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, req *http.Request) {
 	chirpData := requestData{}
 
 	err := decoder.Decode(&chirpData)
-
 	if err != nil {
 		errResponse, _ := json.Marshal(response{
 			Error: "Something went wrong",
 		})
 		w.WriteHeader(500)
+		w.Write(errResponse)
+		return
+	}
+
+	bearerToken, err := auth.GetBearerToken(req.Header)
+	// println("bearerToken", bearerToken)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "No authorization header",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(bearerToken, cfg.authSecret)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "No authorization header",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
 		w.Write(errResponse)
 		return
 	}
@@ -231,21 +192,11 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	chirpDataUserId, err := uuid.Parse(chirpData.UserID)
-	if err != nil {
-		errResponse, _ := json.Marshal(response{
-			Error: "Something went wrong",
-		})
-		w.WriteHeader(500)
-		w.Write(errResponse)
-		return
-	}
-
 	chirp, err := cfg.db.CreateChirp(
 		req.Context(),
 		database.CreateChirpParams{
 			Body:   strings.Join(words, " "),
-			UserID: chirpDataUserId,
+			UserID: userUUID,
 		})
 
 	if err != nil {
@@ -356,7 +307,6 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 	user, err := cfg.db.CreateUser(req.Context(), database.CreateUserParams{Email: userData.Email, HashedPassword: hashedPassword})
 	if err != nil {
 		// fmt.Errorf("error: %w", err)
-		fmt.Println("hello", err)
 		errResponse, _ := json.Marshal(response{
 			Error: "Something went wrong",
 		})
@@ -385,19 +335,21 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	type response struct {
-		Error     string `json:"error,omitempty"`
-		ID        string `json:"id,omitempty"`
-		Email     string `json:"email,omitempty"`
-		CreatedAt string `json:"created_at,omitempty"`
-		UpdatedAt string `json:"updated_at,omitempty"`
+		Error        string `json:"error,omitempty"`
+		ID           string `json:"id,omitempty"`
+		Email        string `json:"email,omitempty"`
+		Token        string `json:"token,omitempty"`
+		RefreshToken string `json:"refresh_token,omitempty"`
+		CreatedAt    string `json:"created_at,omitempty"`
+		UpdatedAt    string `json:"updated_at,omitempty"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
 	decoder := json.NewDecoder(req.Body)
-	userData := requestData{}
+	reqData := requestData{}
 
-	err := decoder.Decode(&userData)
+	err := decoder.Decode(&reqData)
 
 	if err != nil {
 		errResponse, _ := json.Marshal(response{
@@ -409,7 +361,7 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// fetch user by email
-	user, err := cfg.db.GetUserByEmail(req.Context(), userData.Email)
+	user, err := cfg.db.GetUserByEmail(req.Context(), reqData.Email)
 	if err != nil {
 		errResponse, _ := json.Marshal(response{
 			Error: "Incorrect email or password",
@@ -421,10 +373,10 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 
 	// printF(user)
 	// fmt.Printf("%+v\n", user)
-	fmt.Printf("%+v\n", userData.Password)
+	fmt.Printf("%+v\n", reqData.Password)
 	fmt.Printf("%+v\n", user.HashedPassword)
 
-	err = auth.CheckPasswordHash(user.HashedPassword, userData.Password)
+	err = auth.CheckPasswordHash(user.HashedPassword, reqData.Password)
 	if err != nil {
 		errResponse, _ := json.Marshal(response{
 			Error: "Incorrect email or password",
@@ -434,12 +386,141 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	expiry, _ := time.ParseDuration("3600s")
+	token, err := auth.MakeJWT(user.ID, cfg.authSecret, expiry)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	refreshTokenString, _ := auth.MakeRefreshToken()
+
+	refresh, err := cfg.db.CreateRefreshToken(req.Context(), database.CreateRefreshTokenParams{Token: refreshTokenString, UserID: user.ID})
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errResponse)
+		return
+	}
+
 	successResponse, _ := json.Marshal(response{
-		ID:        user.ID.String(),
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt.String(),
-		UpdatedAt: user.UpdatedAt.String(),
+		ID:           user.ID.String(),
+		Email:        user.Email,
+		Token:        token,
+		RefreshToken: refresh.Token,
+		CreatedAt:    user.CreatedAt.String(),
+		UpdatedAt:    user.UpdatedAt.String(),
 	})
 	w.WriteHeader(http.StatusOK)
+	w.Write(successResponse)
+}
+
+func (cfg *apiConfig) refreshAccessToken(w http.ResponseWriter, req *http.Request) {
+	type response struct {
+		Error string `json:"error,omitempty"`
+		Token string `json:"token,omitempty"`
+	}
+
+	bearerRefreshToken, err := auth.GetBearerToken(req.Header)
+	println("refreshAccessToken() bearerRefreshToken", bearerRefreshToken)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "No authorization header",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	refreshTokenDB, err := cfg.db.GetUserFromRefreshToken(req.Context(), bearerRefreshToken)
+	println("refreshAccessToken() refreshTokenDB", refreshTokenDB.UserID.String(), refreshTokenDB.ExpiresAt.String())
+
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Invalid token",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+	if time.Now().After(refreshTokenDB.ExpiresAt) {
+		println("refreshAccessToken() refresh token expired", time.Now().String())
+
+		errResponse, _ := json.Marshal(response{
+			Error: "Invalid token",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+	if refreshTokenDB.RevokedAt.Valid {
+		println("refreshAccessToken() refresh token revoked", time.Now().String())
+
+		errResponse, _ := json.Marshal(response{
+			Error: "Invalid token",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	// println("refreshAccessToken() no errors", refreshTokenDB.ExpiresAt.String(), refreshTokenDB.UserID.String())
+	// return
+
+	expiry, _ := time.ParseDuration("3600s")
+	accessToken, err := auth.MakeJWT(refreshTokenDB.UserID, cfg.authSecret, expiry)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errResponse)
+		return
+	}
+
+	successResponse, _ := json.Marshal(response{
+		Token: accessToken,
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Write(successResponse)
+}
+
+func (cfg *apiConfig) revokeAccessToken(w http.ResponseWriter, req *http.Request) {
+	type response struct {
+		Error   string `json:"error,omitempty"`
+		Message string `json:"message,omitempty"`
+	}
+
+	bearerRefreshToken, err := auth.GetBearerToken(req.Header)
+	// println("bearerRefreshToken", bearerRefreshToken)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "No authorization header",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	err = cfg.db.RevokeRefreshToken(req.Context(), bearerRefreshToken)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Invalid token",
+		})
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errResponse)
+		return
+	}
+
+	successResponse, _ := json.Marshal(response{
+		Message: "Access token revoked!",
+	})
+	w.WriteHeader(http.StatusNoContent)
 	w.Write(successResponse)
 }
