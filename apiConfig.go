@@ -18,6 +18,7 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	authSecret     string
+	polkaSecret    string
 	db             *database.Queries
 }
 
@@ -660,10 +661,21 @@ func (cfg *apiConfig) upgradeUser(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	reqApiKey, err := auth.GetAPIKey(req.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if reqApiKey != cfg.polkaSecret {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	decoder := json.NewDecoder(req.Body)
 	webHookData := requestData{}
 
-	err := decoder.Decode(&webHookData)
+	err = decoder.Decode(&webHookData)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return

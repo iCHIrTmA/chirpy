@@ -17,6 +17,7 @@ func main() {
 	mux := http.NewServeMux()
 	cfg := &apiConfig{}
 	cfg.authSecret = os.Getenv("SECRET_AUTH_KEY")
+	cfg.polkaSecret = os.Getenv("POLKA_KEY")
 	dbURL := os.Getenv("DB_URL")
 
 	db, err := sql.Open("postgres", dbURL)
