@@ -50,8 +50,9 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", cfg.refreshAccessToken)
 	mux.HandleFunc("POST /api/revoke", cfg.revokeAccessToken)
 
-	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	mux.HandleFunc("GET /api/chirps", cfg.getChirps)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.deleteChirp)
+	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirp)
 
 	server := http.Server{}

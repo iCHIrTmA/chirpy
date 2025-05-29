@@ -114,6 +114,64 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 	w.Write(successResponse)
 }
 
+func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, req *http.Request) {
+	errorResponse := struct {
+		Error string `json:"error,omitempty"`
+	}{}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// check access token
+	bearerToken, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(bearerToken, cfg.authSecret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	chirpUUID, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		errorResponse.Error = "Something went wrong"
+		errResponse, _ := json.Marshal(errorResponse)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirp(req.Context(), chirpUUID)
+	if err != nil {
+		errorResponse.Error = "Chirp does not exist"
+		errResponse, _ := json.Marshal(errorResponse)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write(errResponse)
+		return
+	}
+
+	if chirp.UserID != userUUID {
+		errorResponse.Error = "Chirp does not belong to user"
+		errResponse, _ := json.Marshal(errorResponse)
+		w.WriteHeader(http.StatusForbidden)
+		w.Write(errResponse)
+		return
+	}
+
+	err = cfg.db.DeleteChirp(req.Context(), chirp.ID)
+	if err != nil {
+		errorResponse.Error = "Something went wrong"
+		errResponse, _ := json.Marshal(errorResponse)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write(errResponse)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (cfg *apiConfig) createChirp(w http.ResponseWriter, req *http.Request) {
 	type requestData struct {
 		Body   string `json:"body"`
