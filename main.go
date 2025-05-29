@@ -55,6 +55,8 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirp)
 
+	mux.HandleFunc("POST /api/polka/webhooks", cfg.upgradeUser)
+
 	server := http.Server{}
 	server.Addr = ":8080"
 	server.Handler = mux

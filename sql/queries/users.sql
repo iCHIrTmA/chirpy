@@ -20,4 +20,10 @@ UPDATE users
 SET email = $2,
     hashed_password = $3
 WHERE id = $1
-RETURNING id, email, updated_at;
+RETURNING *;
+
+-- name: UpgradeUserToChirpyRed :exec
+UPDATE users
+SET is_chirpy_red = true,
+    updated_at = NOW()
+WHERE id = $1;

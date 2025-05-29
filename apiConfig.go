@@ -35,14 +35,6 @@ func (cfg *apiConfig) getNumRequests(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", cfg.fileserverHits.Load()) // Write HTML directly
 }
 
-// func (cfg *apiConfig) resetNumRequests(w http.ResponseWriter, req *http.Request) {
-// 	cfg.fileserverHits.Store(0)
-
-// 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-// 	w.WriteHeader(http.StatusOK)
-// 	w.Write([]byte("Successfully reset number of hits"))
-// }
-
 func (cfg *apiConfig) resetUsers(w http.ResponseWriter, req *http.Request) {
 	type response struct {
 		Error string `json:"error,omitempty"`
@@ -329,11 +321,12 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	type response struct {
-		Error     string `json:"error,omitempty"`
-		ID        string `json:"id,omitempty"`
-		Email     string `json:"email,omitempty"`
-		CreatedAt string `json:"created_at,omitempty"`
-		UpdatedAt string `json:"updated_at,omitempty"`
+		Error       string `json:"error,omitempty"`
+		ID          string `json:"id,omitempty"`
+		Email       string `json:"email,omitempty"`
+		IsChirpyRed bool   `json:"is_chirpy_red"`
+		CreatedAt   string `json:"created_at,omitempty"`
+		UpdatedAt   string `json:"updated_at,omitempty"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -364,7 +357,6 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 
 	user, err := cfg.db.CreateUser(req.Context(), database.CreateUserParams{Email: userData.Email, HashedPassword: hashedPassword})
 	if err != nil {
-		// fmt.Errorf("error: %w", err)
 		errResponse, _ := json.Marshal(response{
 			Error: "Something went wrong",
 		})
@@ -373,14 +365,14 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// printF(user)
-	// fmt.Printf("%+v\n", user)
+	println(user.IsChirpyRed)
 
 	successResponse, _ := json.Marshal(response{
-		ID:        user.ID.String(),
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt.String(),
-		UpdatedAt: user.UpdatedAt.String(),
+		ID:          user.ID.String(),
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
+		CreatedAt:   user.CreatedAt.String(),
+		UpdatedAt:   user.UpdatedAt.String(),
 	})
 	w.WriteHeader(http.StatusCreated)
 	w.Write(successResponse)
@@ -393,10 +385,11 @@ func (cfg *apiConfig) updateUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	type response struct {
-		Error     string `json:"error,omitempty"`
-		ID        string `json:"id,omitempty"`
-		Email     string `json:"email,omitempty"`
-		UpdatedAt string `json:"updated_at,omitempty"`
+		Error       string `json:"error,omitempty"`
+		ID          string `json:"id,omitempty"`
+		Email       string `json:"email,omitempty"`
+		IsChirpyRed bool   `json:"is_chirpy_red,omitempty"`
+		UpdatedAt   string `json:"updated_at,omitempty"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -449,9 +442,10 @@ func (cfg *apiConfig) updateUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	successResponse, _ := json.Marshal(response{
-		ID:        user.ID.String(),
-		Email:     user.Email,
-		UpdatedAt: user.UpdatedAt.String(),
+		ID:          user.ID.String(),
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
+		UpdatedAt:   user.UpdatedAt.String(),
 	})
 	w.WriteHeader(http.StatusOK)
 	w.Write(successResponse)
@@ -468,6 +462,7 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 		ID           string `json:"id,omitempty"`
 		Email        string `json:"email,omitempty"`
 		Token        string `json:"token,omitempty"`
+		IsChirpyRed  bool   `json:"is_chirpy_red,omitempty"`
 		RefreshToken string `json:"refresh_token,omitempty"`
 		CreatedAt    string `json:"created_at,omitempty"`
 		UpdatedAt    string `json:"updated_at,omitempty"`
@@ -543,6 +538,7 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 		Email:        user.Email,
 		Token:        token,
 		RefreshToken: refresh.Token,
+		IsChirpyRed:  user.IsChirpyRed,
 		CreatedAt:    user.CreatedAt.String(),
 		UpdatedAt:    user.UpdatedAt.String(),
 	})
@@ -652,4 +648,43 @@ func (cfg *apiConfig) revokeAccessToken(w http.ResponseWriter, req *http.Request
 	})
 	w.WriteHeader(http.StatusNoContent)
 	w.Write(successResponse)
+}
+
+func (cfg *apiConfig) upgradeUser(w http.ResponseWriter, req *http.Request) {
+	type requestData struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	decoder := json.NewDecoder(req.Body)
+	webHookData := requestData{}
+
+	err := decoder.Decode(&webHookData)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if webHookData.Event != "user.upgraded" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	userUUID, err := uuid.Parse(webHookData.Data.UserID)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = cfg.db.UpgradeUserToChirpyRed(req.Context(), userUUID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
