@@ -328,6 +328,77 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, req *http.Request) {
 	w.Write(successResponse)
 }
 
+func (cfg *apiConfig) updateUser(w http.ResponseWriter, req *http.Request) {
+	type requestData struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	type response struct {
+		Error     string `json:"error,omitempty"`
+		ID        string `json:"id,omitempty"`
+		Email     string `json:"email,omitempty"`
+		UpdatedAt string `json:"updated_at,omitempty"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// check access token
+	bearerToken, err := auth.GetBearerToken(req.Header)
+	// println("bearerToken", bearerToken)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(bearerToken, cfg.authSecret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	userData := requestData{}
+
+	err = decoder.Decode(&userData)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(userData.Password)
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	user, err := cfg.db.UpdateUser(req.Context(), database.UpdateUserParams{ID: userUUID, Email: userData.Email, HashedPassword: hashedPassword})
+	if err != nil {
+		errResponse, _ := json.Marshal(response{
+			Error: "Something went wrong",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errResponse)
+		return
+	}
+
+	successResponse, _ := json.Marshal(response{
+		ID:        user.ID.String(),
+		Email:     user.Email,
+		UpdatedAt: user.UpdatedAt.String(),
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Write(successResponse)
+}
+
 func (cfg *apiConfig) loginUser(w http.ResponseWriter, req *http.Request) {
 	type requestData struct {
 		Email    string `json:"email"`

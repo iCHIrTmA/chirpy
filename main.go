@@ -42,11 +42,10 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /admin/metrics", cfg.getNumRequests)
-	// mux.HandleFunc("POST /admin/reset", cfg.resetNumRequests)
 	mux.HandleFunc("POST /admin/reset", cfg.resetUsers)
 
-	// mux.HandleFunc("POST /api/validate_chirp", cfg.validateChirp)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
+	mux.HandleFunc("PUT /api/users", cfg.updateUser)
 	mux.HandleFunc("POST /api/login", cfg.loginUser)
 	mux.HandleFunc("POST /api/refresh", cfg.refreshAccessToken)
 	mux.HandleFunc("POST /api/revoke", cfg.revokeAccessToken)
