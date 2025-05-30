@@ -71,15 +71,35 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	dbChirps, err := cfg.db.ListChirps(req.Context())
+	chirpList := []database.Chirp{}
 
-	if err != nil {
-		errResponse, _ := json.Marshal(response{
-			Error: "Something went wrong",
-		})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errResponse)
-		return
+	userID := req.URL.Query().Get("author_id")
+
+	if userID == "" {
+		dbChirps, err := cfg.db.ListChirps(req.Context())
+		if err != nil {
+			errResponse, _ := json.Marshal(response{
+				Error: "Something went wrong",
+			})
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errResponse)
+			return
+		}
+		chirpList = append(chirpList, dbChirps...)
+	}
+
+	if userID != "" {
+		userUUID, _ := uuid.Parse(userID)
+		dbChirps, err := cfg.db.ListChirpsByAuthor(req.Context(), userUUID)
+		if err != nil {
+			errResponse, _ := json.Marshal(response{
+				Error: "Something went wrong",
+			})
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errResponse)
+			return
+		}
+		chirpList = append(chirpList, dbChirps...)
 	}
 
 	type Chirp struct {
@@ -91,7 +111,7 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 	}
 
 	chirps := []Chirp{}
-	for _, dbChirp := range dbChirps {
+	for _, dbChirp := range chirpList {
 		chirp := Chirp{
 			ID:        dbChirp.ID.String(),
 			Body:      dbChirp.Body,
