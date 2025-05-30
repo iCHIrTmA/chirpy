@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -100,6 +101,11 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		chirpList = append(chirpList, dbChirps...)
+	}
+
+	orderBy := req.URL.Query().Get("sort")
+	if orderBy == "desc" {
+		sort.Slice(chirpList, func(i int, j int) bool { return chirpList[i].CreatedAt.After(chirpList[j].CreatedAt) })
 	}
 
 	type Chirp struct {
